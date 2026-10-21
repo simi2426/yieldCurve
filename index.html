@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Market Launchpad</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#000; --panel:#0a0a0a; --border:#2a2a1a; --rule:#1a1a10;
+    --amber:#ff9f0a; --amber-dim:#8a5a00;
+    --green:#00d964; --red:#ff3b30; --white:#e8e8e0; --grey:#8a8a7e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--white);
+    font-family:Consolas,"SF Mono",Menlo,"Courier New",monospace;
+    padding:10px; padding-top:calc(10px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    min-height:100vh;
+  }
+  .topbar{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;
+    border-bottom:2px solid var(--amber);padding-bottom:8px;margin-bottom:10px;}
+  .logo{color:var(--amber);font-weight:700;font-size:18px;letter-spacing:2px;}
+  .logo span{color:var(--white);font-weight:400;font-size:11px;letter-spacing:1px;}
+  .right{display:flex;gap:14px;align-items:baseline;font-size:11px;color:var(--grey);}
+  #status::before{content:"●";margin-right:5px;}
+  #status.live::before{color:var(--green);} #status.stale::before{color:var(--amber);} #status.err::before{color:var(--red);}
+  .banner{display:none;border:1px solid var(--red);color:var(--white);background:#1a0605;font-size:12px;
+    padding:8px 10px;margin-bottom:10px;line-height:1.5;}
+  .banner.show{display:block;}
+  .banner code{color:var(--amber);}
+  .ticker{background:var(--panel);border:1px solid var(--border);color:var(--amber);font-size:11px;
+    padding:5px 8px;margin-bottom:10px;overflow:hidden;white-space:nowrap;}
+  .ticker-track{display:inline-block;animation:scroll 45s linear infinite;}
+  @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  @media (prefers-reduced-motion:reduce){.ticker-track{animation:none}}
+  .up{color:var(--green);} .down{color:var(--red);} .flat{color:var(--grey);}
+  .grid{display:grid;grid-template-columns:1fr;gap:8px;}
+  @media(min-width:820px){.grid{grid-template-columns:1fr 1fr}.span2{grid-column:1/3}}
+  .panel{background:var(--panel);border:1px solid var(--border);padding:8px;min-width:0;}
+  .panel-title{color:var(--amber);font-size:11px;letter-spacing:2px;font-weight:700;
+    border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:7px;
+    display:flex;justify-content:space-between;gap:8px;}
+  .as-of{color:var(--grey);font-weight:400;letter-spacing:0;}
+  .scroll{overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  td,th{padding:3px 4px;text-align:right;white-space:nowrap;}
+  th{color:var(--amber-dim);font-weight:400;}
+  td:first-child,th:first-child{text-align:left;color:var(--grey);}
+  tr:not(:last-child) td{border-bottom:1px solid var(--rule);}
+  .chart-wrap{position:relative;height:220px;margin-bottom:6px;}
+  .legend{font-size:10px;color:var(--grey);margin-bottom:6px;}
+  .legend b{color:var(--amber);} .legend i{color:var(--amber-dim);font-style:normal;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+  .stat-cell{padding:6px 4px;border-bottom:1px solid var(--rule);}
+  .stat-label{color:var(--grey);font-size:10px;letter-spacing:1px;}
+  .stat-val{font-size:15px;font-weight:700;margin-top:2px;}
+  .note{color:var(--grey);font-size:10px;margin-top:6px;}
+  .footer{color:var(--grey);font-size:10px;text-align:center;padding:12px 4px 4px;letter-spacing:1px;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">LAUNCHPAD <span>| MARKET MONITOR</span></div>
+  <div class="right">
+    <span id="status" class="stale">Connecting…</span>
+    <span id="clock">--</span>
+  </div>
+</div>
+
+<div class="banner" id="banner"></div>
+
+<div class="ticker"><div class="ticker-track" id="tickerTrack">Loading tape…</div></div>
+
+<div class="grid">
+
+  <div class="panel span2">
+    <div class="panel-title">US TREASURY YIELD CURVE <span class="as-of" id="curveDate">--</span></div>
+    <div class="legend"><b>━</b> latest close &nbsp; <i>┅</i> previous close</div>
+    <div class="chart-wrap"><canvas id="yieldChart" aria-label="US Treasury yield curve chart" role="img"></canvas></div>
+    <div class="scroll"><table id="yieldTable"></table></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">EQUITIES <span class="as-of" id="eqDate">--</span></div>
+    <table id="eqTable"></table>
+    <div class="note">ETF proxies (free data tier has no raw index tickers)</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">RATES &amp; VOLATILITY <span class="as-of">daily close</span></div>
+    <table id="ratesTable"></table>
+    <div class="note">Change in basis points vs. prior observation</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">FX, COMMODITIES &amp; CRYPTO <span class="as-of" id="fxDate">--</span></div>
+    <table id="fxTable"></table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">US MACRO <span class="as-of">latest release</span></div>
+    <div class="row2" id="macro"></div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Data: FRED (Federal Reserve Bank of St. Louis), Twelve Data. Treasury yields update once per business day.<br>
+  Refreshes automatically. Not investment advice.
+</div>
+
+<script>
+const POLL_MS = 60000; // page checks every minute; the server caches upstream data for 15 min
+
+const LABELS = {
+  DGS1MO:"1M", DGS3MO:"3M", DGS6MO:"6M", DGS1:"1Y", DGS2:"2Y", DGS3:"3Y",
+  DGS5:"5Y", DGS7:"7Y", DGS10:"10Y", DGS20:"20Y", DGS30:"30Y"
+};
+const EQUITIES = [["SPY","S&P 500 (SPY)"],["QQQ","NASDAQ 100 (QQQ)"],["DIA","DOW 30 (DIA)"],["IWM","RUSSELL 2000 (IWM)"]];
+const FX = [["EUR/USD","EUR/USD"],["GLD","GOLD (GLD)"],["USO","WTI OIL (USO)"],["BTC/USD","BITCOIN"]];
+
+const $ = (id) => document.getElementById(id);
+const dir = (x) => x == null ? "flat" : x > 0 ? "up" : x < 0 ? "down" : "flat";
+const sign = (x) => x > 0 ? "+" : "";
+const fmt = (x, d = 2) => x == null ? "—" : x.toLocaleString("en-US", {minimumFractionDigits:d, maximumFractionDigits:d});
+const bp = (a, b) => (a == null || b == null) ? null : Math.round((a - b) * 100);
+const bpStr = (x) => x == null ? "—" : `${sign(x)}${x}`;
+
+function tick(){
+  $("clock").textContent = new Date().toLocaleString("en-US", {
+    timeZone:"America/New_York", weekday:"short", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false
+  }) + " NY";
+}
+tick(); setInterval(tick, 1000);
+
+let chart;
+function renderCurve(d){
+  const ids = d.curve.filter(id => d.fred[id]);
+  const labels = ids.map(id => LABELS[id] || id);
+  const now = ids.map(id => d.fred[id].value);
+  const prev = ids.map(id => d.fred[id].prev);
+  const date = ids.map(id => d.fred[id].date).filter(Boolean).sort().pop();
+  $("curveDate").textContent = date ? `as of ${date} close` : "no data";
+
+  const ds = [
+    {label:"Latest", data:now, borderColor:"#ff9f0a", backgroundColor:"rgba(255,159,10,0.08)",
+     borderWidth:2, pointRadius:3, pointBackgroundColor:"#ff9f0a", pointBorderColor:"#000", fill:true, tension:0.25},
+    {label:"Previous", data:prev, borderColor:"#8a5a00", borderDash:[4,4], borderWidth:1.5,
+     pointRadius:0, fill:false, tension:0.25}
+  ];
+  if (chart){ chart.data.labels = labels; chart.data.datasets = ds; chart.update(); }
+  else {
+    chart = new Chart($("yieldChart").getContext("2d"), {
+      type:"line", data:{labels, datasets:ds},
+      options:{responsive:true, maintainAspectRatio:false, animation:{duration:400},
+        interaction:{mode:"index", intersect:false},
+        plugins:{legend:{display:false},
+          tooltip:{callbacks:{label:(c)=> `${c.dataset.label}: ${c.parsed.y == null ? "—" : c.parsed.y.toFixed(2) + "%"}`}}},
+        scales:{
+          x:{ticks:{color:"#8a8a7e", font:{size:10}}, grid:{color:"#1a1a10"}},
+          y:{ticks:{color:"#8a8a7e", font:{size:10}, callback:(v)=> v + "%"}, grid:{color:"#1a1a10"}}
+        }}
+    });
+  }
+  let rows = "<tr><th>MATURITY</th>" + labels.map(l => `<th>${l}</th>`).join("") + "</tr>";
+  rows += "<tr><td>YIELD %</td>" + now.map(v => `<td>${fmt(v)}</td>`).join("") + "</tr>";
+  rows += "<tr><td>CHG BP</td>" + ids.map((id,i) => { const c = bp(now[i], prev[i]); return `<td class="${dir(c)}">${bpStr(c)}</td>`; }).join("") + "</tr>";
+  $("yieldTable").innerHTML = rows;
+}
+
+function quoteRows(list, quotes, priceDigits = 2){
+  let html = "<tr><th>INSTRUMENT</th><th>LAST</th><th>CHG</th><th>CHG %</th></tr>";
+  for (const [sym, label] of list){
+    const q = quotes[sym] || {};
+    if (q.error || q.price == null){
+      html += `<tr><td>${label}</td><td colspan="3" class="flat">unavailable</td></tr>`; continue;
+    }
+    const d = sym === "EUR/USD" ? 4 : sym === "BTC/USD" ? 0 : priceDigits;
+    html += `<tr><td>${label}</td><td>${fmt(q.price, d)}</td>` +
+      `<td class="${dir(q.change)}">${sign(q.change)}${fmt(q.change, d)}</td>` +
+      `<td class="${dir(q.pct)}">${sign(q.pct)}${fmt(q.pct)}%</td></tr>`;
+  }
+  return html;
+}
+
+function latestTime(list, quotes){
+  const t = list.map(([s]) => quotes[s] && quotes[s].time).filter(Boolean).sort().pop();
+  return t || "--";
+}
+
+function renderRates(f){
+  const row = (label, s, isPct = true) => {
+    const v = f[s] || {}; const c = bp(v.value, v.prev);
+    return `<tr><td>${label}</td><td>${v.value == null ? "—" : fmt(v.value) + (isPct ? "%" : "")}</td>` +
+           `<td class="${dir(c)}">${isPct ? bpStr(c) : (v.value != null && v.prev != null ? sign(v.value - v.prev) + fmt(v.value - v.prev) : "—")}</td></tr>`;
+  };
+  const sp = f.T10Y2Y || {};
+  const spNow = sp.value == null ? null : Math.round(sp.value * 100);
+  const spChg = bp(sp.value, sp.prev);
+  $("ratesTable").innerHTML =
+    "<tr><th>INSTRUMENT</th><th>LAST</th><th>CHG</th></tr>" +
+    row("EFF. FED FUNDS", "DFF") +
+    row("UST 2Y", "DGS2") +
+    row("UST 10Y", "DGS10") +
+    row("UST 30Y", "DGS30") +
+    `<tr><td>10Y–2Y SPREAD</td><td>${spNow == null ? "—" : sign(spNow) + spNow + " bp"}</td><td class="${dir(spChg)}">${bpStr(spChg)}</td></tr>` +
+    row("VIX", "VIXCLS", false);
+}
+
+function renderMacro(f){
+  const cell = (label, v, suffix, date) =>
+    `<div class="stat-cell"><div class="stat-label">${label}</div><div class="stat-val">${v == null ? "—" : fmt(v, 1) + suffix}</div>` +
+    `<div class="stat-label">${date || ""}</div></div>`;
+  const sp = f.T10Y2Y || {};
+  $("macro").innerHTML =
+    cell("UNEMPLOYMENT", (f.UNRATE||{}).value, "%", (f.UNRATE||{}).date) +
+    cell("CPI, YEAR OVER YEAR", (f.CPI_YOY||{}).value, "%", (f.CPI_YOY||{}).date) +
+    cell("EFF. FED FUNDS", (f.DFF||{}).value, "%", (f.DFF||{}).date) +
+    `<div class="stat-cell"><div class="stat-label">CURVE SHAPE (10Y–2Y)</div><div class="stat-val">${
+      sp.value == null ? "—" : sp.value < 0 ? "Inverted" : sp.value < 0.25 ? "Flat" : "Upward sloping"
+    }</div><div class="stat-label">${sp.date || ""}</div></div>`;
+}
+
+function renderTape(d){
+  const items = [];
+  for (const [sym, label] of [...EQUITIES, ...FX]){
+    const q = d.quotes[sym]; if (!q || q.price == null) continue;
+    const dg = sym === "EUR/USD" ? 4 : sym === "BTC/USD" ? 0 : 2;
+    items.push([sym, fmt(q.price, dg), `${sign(q.pct)}${fmt(q.pct)}%`, dir(q.pct)]);
+  }
+  for (const id of ["DGS2","DGS10","DGS30"]){
+    const v = d.fred[id]; if (!v || v.value == null) continue;
+    const c = bp(v.value, v.prev);
+    items.push([`UST${LABELS[id]}`, fmt(v.value) + "%", bpStr(c) + "bp", dir(c)]);
+  }
+  if (!items.length){ $("tickerTrack").textContent = "No market data yet"; return; }
+  const all = items.concat(items);
+  $("tickerTrack").innerHTML = all.map(([s,v,c,cl]) =>
+    `<span style="margin-right:28px"><b style="color:var(--white)">${s}</b> ${v} <span class="${cl}">${c}</span></span>`).join("");
+}
+
+function setStatus(kind, text){ const s = $("status"); s.className = kind; s.textContent = text; }
+function showBanner(html){ const b = $("banner"); b.innerHTML = html; b.classList.toggle("show", !!html); }
+
+async function refresh(){
+  try {
+    const r = await fetch("/api/data", {cache:"no-store"});
+    const d = await r.json().catch(() => ({error:`The data endpoint returned HTTP ${r.status} with no JSON.`}));
+    if (d.error && !d.fred){ throw new Error(d.error); }
+    renderCurve(d); renderRates(d.fred); renderMacro(d.fred);
+    $("eqTable").innerHTML = quoteRows(EQUITIES, d.quotes);
+    $("fxTable").innerHTML = quoteRows(FX, d.quotes);
+    $("eqDate").textContent = latestTime(EQUITIES, d.quotes);
+    $("fxDate").textContent = latestTime(FX, d.quotes);
+    renderTape(d);
+    const t = new Date(d.updated).toLocaleTimeString("en-US", {hour:"2-digit", minute:"2-digit"});
+    if (d.errors && d.errors.length){
+      setStatus("stale", `Partial data · fetched ${t}`);
+      showBanner("Some sources didn’t respond: " + d.errors.map(e => e.replace(/</g,"&lt;")).join("; ") +
+        ". If this mentions credits or rate limits, the free Twelve Data allowance is used up and will reset.");
+    } else {
+      setStatus("live", `Live · fetched ${t}`);
+      showBanner("");
+    }
+  } catch (e){
+    setStatus("err", "No data");
+    const local = location.protocol === "file:";
+    showBanner(local
+      ? "This page needs its data function to run. Open the URL Vercel gives you after deploying, or run <code>vercel dev</code> in the project folder and open <code>http://localhost:3000</code>."
+      : "Couldn’t load market data: " + String(e.message).replace(/</g,"&lt;"));
+  }
+}
+refresh();
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>
